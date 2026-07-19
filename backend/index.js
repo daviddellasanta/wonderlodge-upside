@@ -349,8 +349,19 @@ app.post('/reports/generate', async (req, res) => {
     }
 
     const dateStr = new Date().toISOString().slice(0, 10);
+
+    // Local disk write kept as a fallback/log during the migration to Supabase Storage.
     const pdfPath = path.join(GENERATED_REPORTS_DIR, `${listing_id}-${dateStr}.pdf`);
     fs.writeFileSync(pdfPath, pdfBuffer);
+
+    const storagePath = `${listing_id}/${dateStr}.pdf`;
+    const { error: uploadError } = await supabase.storage
+      .from('reports')
+      .upload(storagePath, pdfBuffer, { contentType: 'application/pdf', upsert: true });
+
+    if (uploadError) {
+      throw uploadError;
+    }
 
     const metrics = {
       property_occupancy_pct: getPropertyOccupancy(marketBenchmark),
@@ -366,7 +377,7 @@ app.post('/reports/generate', async (req, res) => {
         period_end: marketBenchmark.period_end,
         metrics,
         narrative: null,
-        pdf_url: pdfPath,
+        pdf_url: storagePath,
       })
       .select()
       .single();
@@ -443,12 +454,22 @@ app.get('/reports/:id/pdf', async (req, res) => {
     return res.status(404).json({ error: `No report found with id ${id}` });
   }
 
-  if (!report.pdf_url || !fs.existsSync(report.pdf_url)) {
-    return res.status(404).json({ error: 'PDF file not found on disk for this report' });
+  if (!report.pdf_url) {
+    return res.status(404).json({ error: 'No PDF stored for this report' });
   }
 
-  res.setHeader('Content-Type', 'application/pdf');
-  fs.createReadStream(report.pdf_url).pipe(res);
+  const { data: signedUrlData, error: signedUrlError } = await supabase.storage
+    .from('reports')
+    .createSignedUrl(report.pdf_url, 60);
+
+  if (signedUrlError) {
+    console.error('Failed to create signed URL for report PDF:', signedUrlError);
+    return res
+      .status(502)
+      .json({ error: 'Failed to create signed URL for report PDF', details: signedUrlError.message });
+  }
+
+  res.redirect(302, signedUrlData.signedUrl);
 });
 
 const REPORT_STATUSES = ['pending_review', 'approved', 'sent'];
