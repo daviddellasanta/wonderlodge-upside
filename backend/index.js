@@ -382,6 +382,104 @@ app.post('/reports/generate', async (req, res) => {
   }
 });
 
+app.get('/reports', async (req, res) => {
+  const { data: reports, error } = await supabase
+    .from('reports')
+    .select('id, property_id, period_start, period_end, status, pdf_url, created_at')
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    console.error('Failed to load reports:', error);
+    return res.status(502).json({ error: 'Failed to load reports', details: error.message });
+  }
+
+  if (reports.length === 0) {
+    return res.status(200).json([]);
+  }
+
+  const listingIds = [...new Set(reports.map((report) => report.property_id))];
+
+  const { data: properties, error: propertiesError } = await supabase
+    .from('properties')
+    .select('listing_id, property_name, region')
+    .in('listing_id', listingIds);
+
+  if (propertiesError) {
+    console.error('Failed to load properties for reports:', propertiesError);
+    return res
+      .status(502)
+      .json({ error: 'Failed to load properties for reports', details: propertiesError.message });
+  }
+
+  const propertyByListingId = new Map(properties.map((property) => [property.listing_id, property]));
+
+  const data = reports.map((report) => {
+    const property = propertyByListingId.get(report.property_id);
+    return {
+      ...report,
+      property_name: property?.property_name ?? null,
+      region: property?.region ?? null,
+    };
+  });
+
+  res.status(200).json(data);
+});
+
+app.get('/reports/:id/pdf', async (req, res) => {
+  const { id } = req.params;
+
+  const { data: report, error } = await supabase
+    .from('reports')
+    .select('pdf_url')
+    .eq('id', id)
+    .maybeSingle();
+
+  if (error) {
+    console.error('Failed to load report:', error);
+    return res.status(502).json({ error: 'Failed to load report', details: error.message });
+  }
+
+  if (!report) {
+    return res.status(404).json({ error: `No report found with id ${id}` });
+  }
+
+  if (!report.pdf_url || !fs.existsSync(report.pdf_url)) {
+    return res.status(404).json({ error: 'PDF file not found on disk for this report' });
+  }
+
+  res.setHeader('Content-Type', 'application/pdf');
+  fs.createReadStream(report.pdf_url).pipe(res);
+});
+
+const REPORT_STATUSES = ['pending_review', 'approved', 'sent'];
+
+app.patch('/reports/:id/status', async (req, res) => {
+  const { id } = req.params;
+  const { status, reviewed_by } = req.body;
+
+  if (!REPORT_STATUSES.includes(status)) {
+    return res.status(400).json({ error: `status must be one of: ${REPORT_STATUSES.join(', ')}` });
+  }
+
+  const { data, error } = await supabase
+    .from('reports')
+    .update({ status, reviewed_by, reviewed_at: new Date().toISOString() })
+    .eq('id', id)
+    .select()
+    .maybeSingle();
+
+  if (error) {
+    console.error('Failed to update report status:', error);
+    return res.status(502).json({ error: 'Failed to update report status', details: error.message });
+  }
+
+  if (!data) {
+    return res.status(404).json({ error: `No report found with id ${id}` });
+  }
+
+  res.status(200).json(data);
+});
+
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
