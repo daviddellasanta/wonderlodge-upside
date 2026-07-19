@@ -11,8 +11,7 @@ const { buildReportHtml, getCompPricingRows, getPropertyOccupancy, getMarketOccu
 
 const app = express();
 
-// TODO: add the deployed Vercel URL here once it's known.
-const ALLOWED_ORIGINS = ['http://localhost:5173'];
+const ALLOWED_ORIGINS = ['http://localhost:5173', 'https://wonderlodge-upside-admin.vercel.app'];
 
 app.use(cors({ origin: ALLOWED_ORIGINS }));
 app.use(express.json());
