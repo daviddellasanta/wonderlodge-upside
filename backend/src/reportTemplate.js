@@ -48,7 +48,7 @@ function getCompPricingRows(property, neighborhoodSnapshot) {
   return labels.map((label, i) => ({ label, value: values[i] }));
 }
 
-function buildReportHtml(property, marketBenchmark, neighborhoodSnapshot) {
+function buildReportHtml(property, marketBenchmark, neighborhoodSnapshot, narrative) {
   const propertyOccupancy = getPropertyOccupancy(marketBenchmark);
   const marketOccupancy = getMarketOccupancy(marketBenchmark);
   const pricingRows = getCompPricingRows(property, neighborhoodSnapshot);
@@ -137,6 +137,17 @@ function buildReportHtml(property, marketBenchmark, neighborhoodSnapshot) {
     text-align: right;
   }
   footer { padding: 0 56px 40px; font-size: 11px; color: #1E1008; opacity: 0.6; }
+  .narrative {
+    font-family: Georgia, "Times New Roman", serif;
+    font-size: 15px;
+    line-height: 1.6;
+    font-style: italic;
+    color: #1E1008;
+    background: #ffffff;
+    border-left: 3px solid #C9A96E;
+    padding: 16px 20px;
+    margin: 0;
+  }
 </style>
 </head>
 <body>
@@ -145,6 +156,14 @@ function buildReportHtml(property, marketBenchmark, neighborhoodSnapshot) {
     <div class="region">${escapeHtml(property.region)}</div>
   </header>
   <div class="page">
+    ${
+      narrative
+        ? `<section>
+      <h2>Owner Update</h2>
+      <p class="narrative">${escapeHtml(narrative)}</p>
+    </section>`
+        : ''
+    }
     <section>
       <h2>Occupancy</h2>
       <div class="period">${escapeHtml(periodLabel)}</div>

@@ -8,6 +8,7 @@ const puppeteer = require('puppeteer');
 const supabase = require('./src/supabaseClient');
 const { getListingMetrics, getNeighborhoodData, PriceLabsApiError } = require('./src/pricelabsClient');
 const { buildReportHtml, getCompPricingRows, getPropertyOccupancy, getMarketOccupancy } = require('./src/reportTemplate');
+const { generateNarrative } = require('./src/narrativeGenerator');
 
 const app = express();
 
@@ -336,7 +337,21 @@ app.post('/reports/generate', async (req, res) => {
     }
 
     const fullProperty = { listing_id, pms_name, ...property };
-    const html = buildReportHtml(fullProperty, marketBenchmark, neighborhoodSnapshot);
+
+    const metrics = {
+      property_occupancy_pct: getPropertyOccupancy(marketBenchmark),
+      market_occupancy_pct: getMarketOccupancy(marketBenchmark),
+      comp_pricing: getCompPricingRows(fullProperty, neighborhoodSnapshot),
+    };
+
+    let narrative = null;
+    try {
+      narrative = await generateNarrative(fullProperty, metrics);
+    } catch (narrativeError) {
+      console.error('Failed to generate report narrative:', narrativeError);
+    }
+
+    const html = buildReportHtml(fullProperty, marketBenchmark, neighborhoodSnapshot, narrative);
 
     const browser = await puppeteer.launch({ args: ['--no-sandbox', '--disable-setuid-sandbox'] });
     let pdfBuffer;
@@ -363,12 +378,6 @@ app.post('/reports/generate', async (req, res) => {
       throw uploadError;
     }
 
-    const metrics = {
-      property_occupancy_pct: getPropertyOccupancy(marketBenchmark),
-      market_occupancy_pct: getMarketOccupancy(marketBenchmark),
-      comp_pricing: getCompPricingRows(fullProperty, neighborhoodSnapshot),
-    };
-
     const { data: report, error: reportError } = await supabase
       .from('reports')
       .insert({
@@ -376,7 +385,7 @@ app.post('/reports/generate', async (req, res) => {
         period_start: marketBenchmark.period_start,
         period_end: marketBenchmark.period_end,
         metrics,
-        narrative: null,
+        narrative,
         pdf_url: storagePath,
       })
       .select()
